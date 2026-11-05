@@ -1,0 +1,80 @@
+// Shared helpers for the tree pages: IDs, sign-in, API calls, small UI bits.
+const CONFIG = window.TREE_CONFIG;
+const state = { id: null, token: null, data: null, editing: false, gisReady: false, onSignIn: null };
+const app = document.getElementById('app');
+
+// ---------- Tree IDs: 4 digits + Luhn check digit ----------
+function luhn(payload) {
+  let t = 0;
+  payload.split('').reverse().forEach((c, i) => { let d = +c; if (i % 2 === 0) { d *= 2; if (d > 9) d -= 9; } t += d; });
+  return (10 - t % 10) % 10;
+}
+function validId(raw) {
+  const s = String(raw || '').replace(/\D/g, '');
+  return s.length === 5 && luhn(s.slice(0, 4)) === +s[4] ? s : null;
+}
+const label = id => id.slice(0, 4) + '-' + id.slice(4);
+const treeUrl = id => CONFIG.BASE_URL.replace(/\/$/, '') + '/tree/' + id;
+
+// ---------- Google sign-in (TUJP accounts only, checked by the backend) ----------
+function tokenValid(t) {
+  try {
+    const p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return p.exp * 1000 > Date.now() + 60000;
+  } catch (e) { return false; }
+}
+function loadToken() {
+  try { const t = sessionStorage.getItem('tujp_token'); return t && tokenValid(t) ? t : null; } catch (e) { return null; }
+}
+function saveToken(t) {
+  try { t ? sessionStorage.setItem('tujp_token', t) : sessionStorage.removeItem('tujp_token'); } catch (e) {}
+}
+function initGis() {
+  if (!window.google || !google.accounts || !CONFIG.CLIENT_ID.includes('.apps.')) return;
+  if (!state.gisReady) {
+    google.accounts.id.initialize({
+      client_id: CONFIG.CLIENT_ID,
+      callback: r => { saveToken(r.credential); state.token = r.credential; if (state.onSignIn) state.onSignIn(); }
+    });
+    state.gisReady = true;
+  }
+  const el = document.getElementById('gsi');
+  if (el) google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
+}
+function signOut() {
+  saveToken(null); state.token = null;
+  if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
+  if (state.onSignIn) state.onSignIn();
+}
+function renderFooter(staffEmail) {
+  document.getElementById('foot').innerHTML = staffEmail
+    ? `<span class="muted">Signed in as ${esc(staffEmail)}</span> · <a href="#" onclick="signOut();return false">Sign out</a>`
+    : `<p class="muted">TUJP staff</p><div id="gsi" style="display:inline-block"></div>`;
+  initGis();
+}
+
+// ---------- Backend ----------
+async function api(action, body) {
+  const payload = Object.assign({ action, id: state.id, token: state.token }, body || {});
+  const res = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify(payload) });
+  if (!res.ok) throw new Error('Network error ' + res.status);
+  return res.json();
+}
+const ERRORS = {
+  not_signed_in: 'Your sign-in expired. Sign in again.',
+  already_registered: 'Someone already registered this tree. Reload the page.',
+  too_many_reports: 'Too many reports for this tree right now. Try again later.',
+  empty_message: 'Please describe what you noticed.',
+  no_free_ids: 'There are no free IDs left in the register. Add more rows to the Trees tab.',
+  sheet_layout: 'The Trees tab needs a tree_id and a status column.'
+};
+function check(r) { if (!r.ok) throw new Error(ERRORS[r.error] || ('Error: ' + r.error)); return r; }
+
+// ---------- UI helpers ----------
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function msg(text, error) { return `<div class="msg${error ? ' error' : ''}">${esc(text)}</div>`; }
+function alertBox(text) { app.insertAdjacentHTML('afterbegin', msg(text, true)); window.scrollTo(0, 0); }
+async function submitWith(btn, busyText, fn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = busyText;
+  try { await fn(); } catch (e) { btn.disabled = false; btn.textContent = old; alertBox(e.message || String(e)); }
+}

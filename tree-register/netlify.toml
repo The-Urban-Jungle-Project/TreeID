@@ -1,0 +1,15 @@
+# Netlify settings: no build step, the site folder is published as-is.
+[build]
+  publish = "site"
+
+# trees.theurbanjungleproject.com/tree/00018 shows the tree page
+[[redirects]]
+  from = "/tree/*"
+  to = "/tree.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex"
+    Referrer-Policy = "strict-origin-when-cross-origin"
