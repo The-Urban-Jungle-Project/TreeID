@@ -25,11 +25,12 @@ schema = [
     {"key": "project", "header": "project", "type": "list", "options": ["NOS"], "locked": False},
     {"key": "latitude", "header": "latitude", "type": "number", "options": None, "locked": False},
     {"key": "longitude", "header": "longitude", "type": "number", "options": None, "locked": False},
+    {"key": "gps", "header": "GPS", "type": "gps", "options": None, "locked": False},
     {"key": "species", "header": "species", "type": "text", "options": None, "locked": False},
     {"key": "install_date", "header": "install date", "type": "date", "options": None, "locked": False},
     {"key": "notes", "header": "notes", "type": "textarea", "options": None, "locked": False},
 ]
-db = {"registered": False, "tree": {"tree_id": "00018", "tag_label": "0001-8", "status": "Unassigned", "project": "", "latitude": "", "longitude": "", "species": "", "install_date": "", "notes": ""}, "visits": []}
+db = {"registered": False, "tree": {"tree_id": "00018", "tag_label": "0001-8", "status": "Unassigned", "project": "", "latitude": "", "longitude": "", "gps": "", "species": "", "install_date": "", "notes": ""}, "visits": []}
 calls = []
 
 def handle(route):
@@ -93,6 +94,7 @@ with sync_playwright() as p:
     ok("register form hides locked + status", pg.query_selector("[name=tree_id]") is None and pg.query_selector("[name=status]") is None)
     pg.click("#gpsBtn"); pg.wait_for_function("document.getElementById('f_latitude').value !== ''")
     ok("use my location fills lat", pg.input_value("#f_latitude") == "52.370000")
+    ok("use my location fills GPS column", pg.input_value("#f_gps") == "52.370000, 4.890000")
     pg.select_option("#f_project", "NOS"); pg.fill("#f_species", "Acer campestre"); pg.fill("#f_install_date", "2026-11-02")
     pg.screenshot(path=f"{OUT}/2_staff_register.png", full_page=True)
     pg.click("#register button[type=submit]"); pg.wait_for_selector("text=Tree registered"); pg.wait_for_selector("#visitBtn")

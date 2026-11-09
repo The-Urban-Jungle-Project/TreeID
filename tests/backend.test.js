@@ -31,8 +31,8 @@ function makeSheet(rows, formulas) {
   return s;
 }
 
-const treesHeader = ['tree_id', 'tag_label', 'id_check', 'status', 'project', 'location', 'latitude', 'longitude', 'block_id', 'product_type', 'species', 'age', 'install date', 'sun exposure', 'notes'];
-const trees = makeSheet([treesHeader, ...ids.map(id => [id, id.slice(0, 4) + '-' + id[4], 'OK', 'Unassigned', '', '', '', '', '', '', '', '', '', '', ''])], { 2: '=formula', 3: '=formula' });
+const treesHeader = ['tree_id', 'tag_label', 'id_check', 'status', 'project', 'location', 'latitude', 'longitude', 'block_id', 'product_type', 'species', 'age', 'install date', 'sun exposure', 'GPS', 'notes'];
+const trees = makeSheet([treesHeader, ...ids.map(id => [id, id.slice(0, 4) + '-' + id[4], 'OK', 'Unassigned', '', '', '', '', '', '', '', '', '', '', '', ''])], { 2: '=formula', 3: '=formula' });
 const visits = makeSheet([['visit_id', 'tree_id', 'visited_at', 'photo_close', 'photo_medium', 'photo_wide', 'gps', 'visited_by', 'notes']]);
 const lists = makeSheet([['status', 'product_type', 'sun_exposure', 'project'], ['Unassigned', 'Jungle Block', 'Full sun', 'NOS'], ['Active', 'Other', 'Shade', ''], ['Dead', '', '', ''], ['Replaced', '', '', '']]);
 const sheets = { Trees: trees, Visits: visits, Lists: lists };
@@ -62,7 +62,7 @@ const ctx = {
   Session: { getEffectiveUser: () => ({ getEmail: () => 'owner@theurbanjungleproject.com' }) }
 };
 vm.createContext(ctx);
-vm.runInContext(code.replace("'PASTE-YOUR-OAUTH-CLIENT-ID.apps.googleusercontent.com'", "'CID'"), ctx);
+vm.runInContext(code.replace(/const CLIENT_ID = '[^']*'/, "const CLIENT_ID = 'CID'"), ctx);
 const call = body => ctx.doPost({ postData: { contents: JSON.stringify(body) } });
 
 let fails = 0;
@@ -75,6 +75,7 @@ expect('public get on unassigned', r.ok && !r.staff && !r.registered && Object.k
 r = call({ action: 'register', id: '00018', fields: { species: 'Acer' } });
 expect('register needs sign-in', r.error === 'not_signed_in', r);
 r = call({ action: 'get', id: '00018', token: 'T1' });
+expect('GPS column gets gps type', r.schema.find(f => f.key === 'gps').type === 'gps', r.schema);
 expect('staff get returns schema with lists', r.staff && r.schema.find(f => f.key === 'sun_exposure').type === 'list' && r.schema.find(f => f.key === 'install_date').type === 'date', r.schema);
 r = call({ action: 'register', id: '00018', token: 'T1', fields: { species: 'Acer campestre', project: 'NOS', install_date: '2026-11-02', latitude: '52.1', tree_id: '99999', tag_label: 'X', id_check: 'X', status: 'Dead' } });
 expect('register ok', r.ok, r);
@@ -117,9 +118,18 @@ expect('wrong client id is public only', !r.staff, r);
 r = call({ action: 'claim' });
 expect('claim needs sign-in', r.error === 'not_signed_in', r);
 tokenInfo = Object.assign({}, tokenInfo, { aud: 'CID', hd: 'theurbanjungleproject.com' });
+trees.rows[2][3] = 'Tagged';
+r = call({ action: 'get', id: '00026' });
+expect('tagged shows as not linked', r.ok && !r.registered, r);
+r = call({ action: 'claim', token: 'T4' });
+expect('claim skips Tagged IDs', r.ok && r.id === '00034', r);
+trees.rows[3][3] = 'Unassigned';
+r = call({ action: 'register', id: '00026', token: 'T4', fields: { species: 'Quercus' } });
+expect('tagged ID can be registered', r.ok && trees.rows[2][3] === 'Active', trees.rows[2]);
+trees.rows[2][3] = 'Unassigned'; trees.rows[2][5] = '';
 r = call({ action: 'claim', token: 'T4' });
 expect('claim returns first Unassigned ID', r.ok && r.id === '00026' && trees.rows[2][3] === 'Reserved', r);
-expect('claim notes who programmed the tag', String(trees.rows[2][14]).includes('ferdinand@'), trees.rows[2][14]);
+expect('claim notes who programmed the tag', String(trees.rows[2][15]).includes('ferdinand@'), trees.rows[2][15]);
 r = call({ action: 'claim', token: 'T4' });
 expect('second claim gets the next ID', r.ok && r.id === '00034', r);
 r = call({ action: 'get', id: '00026' });

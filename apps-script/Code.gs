@@ -9,7 +9,7 @@
  */
 
 // ---------- Settings (fill in CLIENT_ID, check the rest) ----------
-const CLIENT_ID = 'PASTE-YOUR-OAUTH-CLIENT-ID.apps.googleusercontent.com';
+const CLIENT_ID = '446368725574-om35kgq8n2vopqkdqothjck75t8pkvsh.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'theurbanjungleproject.com';
 const PHOTO_FOLDER_ID = '11YCIGYVPdOdPDSMtSfe5qxwWMi2V7Zkn'; // Visits_Images folder in Drive
 const PHOTO_PATH_PREFIX = 'Visits_Images/';                   // keeps AppSheet able to show the photos
@@ -19,8 +19,9 @@ const MAX_VISITS_SHOWN = 10;
 
 const TREES = 'Trees', VISITS = 'Visits', LISTS = 'Lists', REPORTS = 'Reports';
 const LOCKED = ['tree_id', 'tag_label', 'id_check', 'qr_url'];
-// Statuses that mean "no tree linked yet". Reserved = ID claimed for a tag being programmed.
-const OPEN_STATUSES = ['', 'Unassigned', 'Reserved'];
+// Statuses that mean "no tree linked yet". Reserved = ID claimed for a tag being programmed,
+// Tagged = ID already on a pre-programmed tag from the supplier (never handed out by claim).
+const OPEN_STATUSES = ['', 'Unassigned', 'Reserved', 'Tagged'];
 
 // ---------- Entry points ----------
 function doGet() {
@@ -77,6 +78,7 @@ function schema_(t) {
     let type = 'text';
     if (k.indexOf('date') !== -1) type = 'date';
     else if (k === 'latitude' || k === 'longitude') type = 'number';
+    else if (k === 'gps') type = 'gps';
     else if (k === 'notes') type = 'textarea';
     if (lists[k]) type = 'list';
     return { key: k, header: t.headers[i], type: type, options: lists[k] || null, locked: LOCKED.indexOf(k) !== -1 };

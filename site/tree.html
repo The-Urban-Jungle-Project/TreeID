@@ -62,6 +62,8 @@ function field(f, value) {
     input = `<textarea id="${id}" name="${esc(f.key)}">${esc(v)}</textarea>`;
   } else if (f.type === 'date') {
     input = `<input id="${id}" type="date" name="${esc(f.key)}" value="${/^\d{4}-\d{2}-\d{2}$/.test(v) ? esc(v) : ''}">`;
+  } else if (f.type === 'gps') {
+    input = `<input id="${id}" name="${esc(f.key)}" value="${esc(v)}" placeholder="52.240301, 5.168752">`;
   } else if (f.type === 'number') {
     input = `<input id="${id}" type="number" step="any" inputmode="decimal" name="${esc(f.key)}" value="${esc(v)}">`;
   } else {
@@ -72,7 +74,7 @@ function field(f, value) {
 
 function treeForm(d, register) {
   const fields = d.schema.filter(f => !f.locked && !(register && f.key === 'status'));
-  const hasGps = fields.some(f => f.key === 'latitude');
+  const hasGps = fields.some(f => f.key === 'latitude' || f.key === 'gps');
   return `<form id="${register ? 'register' : 'edit'}">
     ${hasGps ? `<button type="button" class="secondary full" id="gpsBtn">Use my location</button>` : ''}
     ${fields.map(f => field(f, d.tree[f.key])).join('')}
@@ -144,7 +146,12 @@ function bind() {
   if (q('gpsBtn')) q('gpsBtn').onclick = async e => {
     e.target.textContent = 'Finding location…';
     const p = await getPosition();
-    if (p) { q('f_latitude').value = p.lat; if (q('f_longitude')) q('f_longitude').value = p.lon; e.target.textContent = 'Location added'; }
+    if (p) {
+      if (q('f_gps')) q('f_gps').value = p.lat + ', ' + p.lon;
+      if (q('f_latitude')) q('f_latitude').value = p.lat;
+      if (q('f_longitude')) q('f_longitude').value = p.lon;
+      e.target.textContent = 'Location added';
+    }
     else e.target.textContent = 'No location found, type it in';
   };
   if (q('editBtn')) q('editBtn').onclick = () => { state.editing = true; load(); };
