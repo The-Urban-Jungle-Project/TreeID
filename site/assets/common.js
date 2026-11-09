@@ -23,30 +23,46 @@ function tokenValid(t) {
     return p.exp * 1000 > Date.now() + 60000;
   } catch (e) { return false; }
 }
-function loadToken() {
-  try { const t = sessionStorage.getItem('tujp_token'); return t && tokenValid(t) ? t : null; } catch (e) { return null; }
-}
-function saveToken(t) {
-  try { t ? sessionStorage.setItem('tujp_token', t) : sessionStorage.removeItem('tujp_token'); } catch (e) {}
-}
+// The sign-in token is kept in localStorage so a new tab (every NFC tap opens one) stays signed in
+// until the token expires (about 1 hour). After that, browsers that signed in as staff before are
+// signed in again automatically (Google auto sign-in), without a click.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
+};
+function loadToken() { const t = store.get('tujp_token'); return t && tokenValid(t) ? t : null; }
+function saveToken(t) { store.set('tujp_token', t); }
 function initGis() {
   if (!window.google || !google.accounts || !CONFIG.CLIENT_ID.includes('.apps.')) return;
   if (!state.gisReady) {
     google.accounts.id.initialize({
       client_id: CONFIG.CLIENT_ID,
-      callback: r => { saveToken(r.credential); state.token = r.credential; if (state.onSignIn) state.onSignIn(); }
+      auto_select: true,
+      cancel_on_tap_outside: false,
+      callback: r => {
+        store.set('tujp_signed_out', null);
+        saveToken(r.credential); state.token = r.credential;
+        if (state.onSignIn) state.onSignIn();
+      }
     });
     state.gisReady = true;
+    // Only browsers that were signed in as TUJP staff before get the automatic sign-in,
+    // so public visitors never see a Google prompt.
+    if (!state.token && store.get('tujp_staff') && !store.get('tujp_signed_out')) {
+      google.accounts.id.prompt();
+    }
   }
   const el = document.getElementById('gsi');
   if (el) google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
 }
 function signOut() {
   saveToken(null); state.token = null;
+  store.set('tujp_signed_out', '1');
   if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
   if (state.onSignIn) state.onSignIn();
 }
 function renderFooter(staffEmail) {
+  if (staffEmail) store.set('tujp_staff', '1');
   document.getElementById('foot').innerHTML = staffEmail
     ? `<span class="muted">Signed in as ${esc(staffEmail)}</span> · <a href="#" onclick="signOut();return false">Sign out</a>`
     : `<p class="muted">TUJP staff</p><div id="gsi" style="display:inline-block"></div>`;
