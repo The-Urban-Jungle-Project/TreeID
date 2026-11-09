@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tree | The Urban Jungle Project</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css">
+<script src="https://accounts.google.com/gsi/client" async defer onload="window.initGis && initGis()"></script>
+</head>
+<body>
+<header>
+  <a href="/"><img src="/assets/tujp-logo.svg" alt="The Urban Jungle Project"></a>
+  <div class="eyebrow">Tree ID</div>
+  <h1 id="title">Tree</h1>
+</header>
+<main id="app"><p class="muted">Loading…</p></main>
+<footer id="foot"></footer>
+<script src="/config.js"></script>
+<script src="/assets/common.js"></script>
+<script>
+// Tree page: public view, staff registration, details and visits.
+async function load(notice) {
+  const id = state.id;
+  if (!id) { app.innerHTML = msg('This tag does not contain a valid tree ID.', true); return; }
+  document.getElementById('title').textContent = 'Tree ' + label(id);
+  app.innerHTML = (notice ? msg(notice) : '') + '<p class="muted">Loading…</p>';
+  let d;
+  try { d = await api('get'); } catch (e) { app.innerHTML = msg('Could not reach the tree register. Check your connection and try again.', true); return; }
+  if (!d.ok) { app.innerHTML = msg(d.error === 'not_found' ? 'This tree ID is not in the register.' : 'Something went wrong: ' + d.error, true); return; }
+  if (state.token && !d.staff) { saveToken(null); state.token = null; notice = 'Sign-in only works with a TUJP Google account.'; }
+  state.data = d;
+  app.innerHTML = (notice ? msg(notice) : '') + (d.staff ? staffView(d) : publicView(d));
+  renderFooter(d.staff ? d.user : null);
+  bind();
+}
+
+function publicView(d) {
+  if (!d.registered) return `<div class="card"><h2>Not linked yet</h2><p>This tag has not been linked to a tree yet.</p></div>`;
+  const rows = Object.keys(d.tree).map(k => `<dt>${esc(CONFIG.LABELS[k] || k)}</dt><dd>${esc(d.tree[k])}</dd>`).join('');
+  return `<div class="card"><p>${esc(CONFIG.PUBLIC_TEXT)}</p><dl>${rows}</dl></div>
+  <div class="card"><h2>Something wrong with this tree?</h2>
+    <form id="report">
+      <label for="r_msg">What did you notice?</label><textarea id="r_msg" name="message" required maxlength="1000"></textarea>
+      <label for="r_contact">Email or phone (optional)</label><input id="r_contact" name="contact" maxlength="200">
+      <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button class="full" type="submit">Send report</button>
+    </form></div>`;
+}
+
+function field(f, value) {
+  const v = value || '';
+  const id = 'f_' + f.key;
+  let input;
+  if (f.type === 'list') {
+    input = `<select id="${id}" name="${esc(f.key)}"><option value=""></option>` +
+      f.options.map(o => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('') +
+      (v && f.options.indexOf(v) === -1 ? `<option selected>${esc(v)}</option>` : '') + `</select>`;
+  } else if (f.type === 'textarea') {
+    input = `<textarea id="${id}" name="${esc(f.key)}">${esc(v)}</textarea>`;
+  } else if (f.type === 'date') {
+    input = `<input id="${id}" type="date" name="${esc(f.key)}" value="${/^\d{4}-\d{2}-\d{2}$/.test(v) ? esc(v) : ''}">`;
+  } else if (f.type === 'gps') {
+    input = `<input id="${id}" name="${esc(f.key)}" value="${esc(v)}" placeholder="52.240301, 5.168752">`;
+  } else if (f.type === 'number') {
+    input = `<input id="${id}" type="number" step="any" inputmode="decimal" name="${esc(f.key)}" value="${esc(v)}">`;
+  } else {
+    input = `<input id="${id}" name="${esc(f.key)}" value="${esc(v)}">`;
+  }
+  return `<label for="${id}">${esc(f.header)}</label>${input}`;
+}
+
+function treeForm(d, register) {
+  const fields = d.schema.filter(f => !f.locked && !(register && f.key === 'status'));
+  const hasGps = fields.some(f => f.key === 'latitude' || f.key === 'gps');
+  return `<form id="${register ? 'register' : 'edit'}">
+    ${hasGps ? `<button type="button" class="secondary full" id="gpsBtn">Use my location</button>` : ''}
+    ${fields.map(f => field(f, d.tree[f.key])).join('')}
+    <button class="full" type="submit">${register ? 'Register this tree' : 'Save changes'}</button>
+    ${register ? '' : `<button class="secondary full" type="button" id="cancelEdit">Cancel</button>`}
+  </form>`;
+}
+
+function staffView(d) {
+  if (!d.registered) {
+    return `<div class="card"><span class="pill">New tag</span><h2 style="margin-top:12px">Register this tree</h2>
+      <p class="muted">Fill in what you know now. Everything except the ID can be changed later.</p>${treeForm(d, true)}</div>`;
+  }
+  const info = state.editing ? treeForm(d, false) :
+    `<dl>${d.schema.filter(f => d.tree[f.key] !== '').map(f => `<dt>${esc(f.header)}</dt><dd>${esc(d.tree[f.key])}</dd>`).join('')}</dl>
+     <button class="secondary full" id="editBtn" type="button">Edit details</button>`;
+  return `<div class="card"><div class="row"><h2>Tree details</h2><span class="pill">${esc(d.tree.status)}</span></div>${info}</div>
+  <div class="card"><h2>Add a visit</h2>
+    <form id="visit">
+      ${['close', 'medium', 'wide'].map(s => `<div class="shot"><label for="p_${s}">Photo: ${s}</label>
+        <input id="p_${s}" type="file" accept="image/*" capture="environment" data-shot="${s}"><img id="prev_${s}" alt=""></div>`).join('')}
+      <label for="v_notes">Notes</label><textarea id="v_notes" name="notes" maxlength="2000"></textarea>
+      <p class="muted">Date, time, location and your name are added automatically.</p>
+      <button class="full" type="submit" id="visitBtn">Save visit</button>
+    </form></div>
+  <div class="card visits"><h2>Recent visits</h2>${d.visits.length ? d.visits.map(visitHtml).join('') : '<p class="muted">No visits yet.</p>'}</div>`;
+}
+
+function visitHtml(v) {
+  const photos = (v.photos || []).map(p => p.thumb
+    ? `<a href="${esc(p.url)}" target="_blank" rel="noopener"><img src="${esc(p.thumb)}" alt="${esc(p.shot)}" loading="lazy"></a>`
+    : `<span class="muted">${esc(p.shot)}: ${esc(p.name)}</span> `).join('');
+  return `<div class="visit"><div class="row"><strong>${esc(v.visited_at)}</strong><span class="muted">${esc(v.visited_by)}</span></div>
+    ${v.notes ? `<p>${esc(v.notes)}</p>` : ''}<div>${photos}</div></div>`;
+}
+
+// ---------- Behaviour ----------
+function formFields(form) {
+  const out = {};
+  new FormData(form).forEach((v, k) => { if (k !== 'website') out[k] = v; });
+  return out;
+}
+function getPosition() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude.toFixed(6), lon: p.coords.longitude.toFixed(6) }),
+      () => resolve(null), { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+  });
+}
+function resizePhoto(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, CONFIG.PHOTO_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL('image/jpeg', CONFIG.PHOTO_QUALITY).split(',')[1]);
+    };
+    img.onerror = () => reject(new Error('Could not read photo'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function bind() {
+  const q = s => document.getElementById(s);
+  if (q('gpsBtn')) q('gpsBtn').onclick = async e => {
+    e.target.textContent = 'Finding location…';
+    const p = await getPosition();
+    if (p) {
+      if (q('f_gps')) q('f_gps').value = p.lat + ', ' + p.lon;
+      if (q('f_latitude')) q('f_latitude').value = p.lat;
+      if (q('f_longitude')) q('f_longitude').value = p.lon;
+      e.target.textContent = 'Location added';
+    }
+    else e.target.textContent = 'No location found, type it in';
+  };
+  if (q('editBtn')) q('editBtn').onclick = () => { state.editing = true; load(); };
+  if (q('cancelEdit')) q('cancelEdit').onclick = () => { state.editing = false; load(); };
+  ['register', 'edit'].forEach(name => {
+    const f = q(name); if (!f) return;
+    f.onsubmit = e => { e.preventDefault(); submitWith(f.querySelector('button[type=submit]'), 'Saving…', async () => {
+      check(await api(name === 'register' ? 'register' : 'update', { fields: formFields(f) }));
+      state.editing = false; load(name === 'register' ? 'Tree registered. Add the first visit with photos below.' : 'Changes saved.');
+    }); };
+  });
+  document.querySelectorAll('input[type=file]').forEach(inp => inp.onchange = () => {
+    const prev = q('prev_' + inp.dataset.shot);
+    if (inp.files[0]) { prev.src = URL.createObjectURL(inp.files[0]); prev.style.display = 'block'; }
+  });
+  if (q('visit')) q('visit').onsubmit = e => {
+    e.preventDefault();
+    submitWith(q('visitBtn'), 'Uploading…', async () => {
+      const photos = {};
+      for (const s of ['close', 'medium', 'wide']) {
+        const file = q('p_' + s).files[0];
+        if (file) photos[s] = await resizePhoto(file);
+      }
+      const notes = q('v_notes').value.trim();
+      if (!Object.keys(photos).length && !notes) throw new Error('Add at least one photo or a note.');
+      const p = await getPosition();
+      check(await api('visit', { photos, notes, gps: p ? p.lat + ', ' + p.lon : '' }));
+      load('Visit saved.');
+    });
+  };
+  if (q('report')) q('report').onsubmit = e => {
+    e.preventDefault();
+    const f = q('report');
+    submitWith(f.querySelector('button'), 'Sending…', async () => {
+      const data = formFields(f); data.website = f.website.value;
+      check(await api('report', data));
+      f.outerHTML = msg('Thank you, we have received your report.');
+    });
+  };
+}
+
+
+state.id = validId((location.pathname.match(/\/tree\/([0-9-]+)/) || [])[1] || new URLSearchParams(location.search).get('id'));
+state.token = loadToken();
+state.onSignIn = () => load();
+load();
+</script>
+</body>
+</html>
